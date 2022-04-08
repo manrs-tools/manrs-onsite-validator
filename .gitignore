@@ -1,0 +1,12 @@
+.DS_Store
+.coverage
+.idea
+.mypy_cache
+.tmpdirs
+.pytest_cache
+.vscode
+configs
+snap/configs
+
+syntax: glob
+__pycache__
