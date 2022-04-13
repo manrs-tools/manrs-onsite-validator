@@ -9,7 +9,7 @@ import textwrap
 
 logger = logging.getLogger("ocv")
 logging.basicConfig(level=logging.WARN, format="%(levelname)s: %(message)s")
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 
 class PolicyAction(enum.Enum):
@@ -31,19 +31,20 @@ def main():
     bf = prepare_batfish_session()
     logger.info(f"==== Validating traffic filters on interfaces ====")
     TrafficFilterValidator(bf).validate(BOGONS_IPV4)
-    logger.info(f"==== Validating prefix filters on BGP sessions ====")
-    BgpFilterValidator(bf).validate(BOGONS_IPV4)
+    # logger.info(f"==== Validating prefix filters on BGP sessions ====")
+    # BgpFilterValidator(bf).validate(BOGONS_IPV4)
 
 
 def prepare_batfish_session():
     bf = Session(host="localhost")
 
     bf.set_network("ocv")
-    bf.init_snapshot("snap", name="ocv", overwrite=True)
-    # bf.set_snapshot("ocv")
+    # bf.init_snapshot("snap", name="ocv", overwrite=True)
+    bf.set_snapshot("ocv")
     issues = bf.q.initIssues().answer().frame()
-    if not issues.empty:
-        logger.info(f"==== Issues in parsing coniguration: ====\n{issues}")
+    # TODO: clean this output
+    # if not issues.empty:
+    # logger.info(f"==== Issues in parsing coniguration: ====\n{issues}")
     return bf
 
 
@@ -79,15 +80,21 @@ class TrafficFilterValidator:
         interfaces = self.bf.q.interfaceProperties().answer().frame()
         logger.info(f"Checking {len(interfaces)} interfaces for traffic filters...")
         for _, intf in interfaces.iterrows():
-            node, name, descr, incoming_filter = (
+            node, name, descr, prefixes, admin_up, incoming_filter = (
                 intf["Interface"].hostname,
                 intf["Interface"].interface,
                 intf.get("Description", ""),
+                intf["All_Prefixes"],
+                intf["Admin_Up"],
                 intf.get("Incoming_Filter_Name"),
             )
             if descr:
-                descr = textwrap.shorten(descr, width=15, placeholder="...")
+                descr = textwrap.shorten(descr, width=20, placeholder="...")
             label = f"Interface {node} {name} {descr}"
+
+            if not prefixes or not admin_up:
+                logger.debug(f"{label}: ignoring due to admin down or no prefixes")
+                continue
 
             if incoming_filter:
                 filter_status = self.filters_status.get(node, {}).get(incoming_filter, [])
