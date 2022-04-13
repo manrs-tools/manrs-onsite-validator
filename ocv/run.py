@@ -29,62 +29,90 @@ class PolicyAction(enum.Enum):
 def main():
     pandas.set_option("display.max_rows", None)
     bf = prepare_batfish_session()
-    # BgpFilterValidator(bf).validate(BOGONS_IPV4)
-    
-    logger.info(f"Checking traffic filter status for {len(BOGONS_IPV4)} prefixes...")
-
-    bogon_ips = [prefix.split('/')[0] + '1' for prefix in BOGONS_IPV4]
-    filters_status = {}
-    for bogon_ip in bogon_ips:
-        filter_results = bf.q.testFilters(headers=HeaderConstraints(srcIps=bogon_ip, applications = ['http'])).answer().frame()
-        for _, filter_result in filter_results.iterrows():
-            node, filter_name, vrf, action = filter_result['Node'], filter_result['Filter_Name'], filter_result['Flow'].ingressVrf, getattr(PolicyAction, filter_result['Action'])
-            filters_status.setdefault(node, {}).setdefault(filter_name, []).append((vrf, bogon_ip, action))
-            
-    interfaces = bf.q.interfaceProperties().answer().frame()
-    logger.info(f"Checking {len(interfaces)} interfaces for traffic filters...")
-    for _, intf in interfaces.iterrows():
-        node, name, descr, incoming_filter = (
-            intf['Interface'].hostname,
-            intf['Interface'].interface,
-            intf.get('Description', ''),
-            intf.get('Incoming_Filter_Name'),
-        )
-        if descr:
-            descr = textwrap.shorten(descr, width=15, placeholder='...')
-        label = f"Interface {node} {name} {descr}"
-        if incoming_filter:
-            filter_status = filters_status.get(node, {}).get(incoming_filter, [])
-            permitted_incorrectly = [(ip, vrf) for vrf, ip, action in filter_status if action ==PolicyAction.PERMIT]
-            if permitted_incorrectly:
-                multiple_vrf = any([vrf != 'default' for ip, vrf in permitted_incorrectly])
-                permitted_incorrectly_str = [f'{ip} in VRF {vrf}' if multiple_vrf else ip for ip, vrf in permitted_incorrectly]
-                logger.error(f'{label}: incorrectly permits {", ".join(permitted_incorrectly_str)}')
-            else:
-                logger.info(f"{label}: no issues with traffic filter")
-        else:
-            logger.error(f"{label}: no traffic filter found")
+    logger.info(f"==== Validating traffic filters on interfaces ====")
+    TrafficFilterValidator(bf).validate(BOGONS_IPV4)
+    logger.info(f"==== Validating prefix filters on BGP sessions ====")
+    BgpFilterValidator(bf).validate(BOGONS_IPV4)
 
 
 def prepare_batfish_session():
     bf = Session(host="localhost")
 
     bf.set_network("ocv")
-    # TODO: revert to normal init_snapshot
-    # bf.init_snapshot("snap", name="ocv", overwrite=True)
-    bf.set_snapshot('ocv')
-    # issues = bf.q.initIssues().answer().frame()
-    # if not issues.empty:
-    #     logger.info(f"==== Issues in parsing coniguration: ====\n{issues}")
+    bf.init_snapshot("snap", name="ocv", overwrite=True)
+    # bf.set_snapshot("ocv")
+    issues = bf.q.initIssues().answer().frame()
+    if not issues.empty:
+        logger.info(f"==== Issues in parsing coniguration: ====\n{issues}")
     return bf
+
+
+class TrafficFilterValidator:
+    def __init__(self, bf):
+        self.bf = bf
+
+    def validate(self, disallowed_prefixes):
+        self._build_filter_status(disallowed_prefixes)
+        self._check_interface_filters()
+
+    def _build_filter_status(self, disallowed_prefixes):
+        logger.info(f"Checking traffic filter status for {len(disallowed_prefixes)} prefixes...")
+        # TODO: this prefix->IP is very hacky
+        bogon_ips = [prefix.split("/")[0][:-1] + "1" for prefix in disallowed_prefixes]
+        self.filters_status = {}
+        for bogon_ip in bogon_ips:
+            filter_results = (
+                self.bf.q.testFilters(headers=HeaderConstraints(srcIps=bogon_ip, applications=["http"]))
+                .answer()
+                .frame()
+            )
+            for _, filter_result in filter_results.iterrows():
+                node, filter_name, vrf, action = (
+                    filter_result["Node"],
+                    filter_result["Filter_Name"],
+                    filter_result["Flow"].ingressVrf,
+                    getattr(PolicyAction, filter_result["Action"]),
+                )
+                self.filters_status.setdefault(node, {}).setdefault(filter_name, []).append((vrf, bogon_ip, action))
+
+    def _check_interface_filters(self):
+        interfaces = self.bf.q.interfaceProperties().answer().frame()
+        logger.info(f"Checking {len(interfaces)} interfaces for traffic filters...")
+        for _, intf in interfaces.iterrows():
+            node, name, descr, incoming_filter = (
+                intf["Interface"].hostname,
+                intf["Interface"].interface,
+                intf.get("Description", ""),
+                intf.get("Incoming_Filter_Name"),
+            )
+            if descr:
+                descr = textwrap.shorten(descr, width=15, placeholder="...")
+            label = f"Interface {node} {name} {descr}"
+
+            if incoming_filter:
+                filter_status = self.filters_status.get(node, {}).get(incoming_filter, [])
+                permitted_incorrectly = [
+                    (ip, vrf) for vrf, ip, action in filter_status if action == PolicyAction.PERMIT
+                ]
+                if permitted_incorrectly:
+                    # For brevity, only print the VRF if any non-default VRF filters were found
+                    multiple_vrf = any([vrf != "default" for ip, vrf in permitted_incorrectly])
+                    permitted_incorrectly_str = [
+                        f"{ip} in VRF {vrf}" if multiple_vrf else ip for ip, vrf in permitted_incorrectly
+                    ]
+                    logger.error(f'{label}: incorrectly permits {", ".join(permitted_incorrectly_str)}')
+                else:
+                    logger.info(f"{label}: no issues with traffic filter")
+            else:
+                logger.error(f"{label}: no traffic filter found")
 
 
 class BgpFilterValidator:
     def __init__(self, bf):
         self.bf = bf
 
-        bgp_peers = bf.q.bgpPeerConfiguration().answer().frame()
-        logger.info(f"Checking {len(bgp_peers)} BGP peers...")
+        self.bgp_peers = bf.q.bgpPeerConfiguration().answer().frame()
+        logger.info(f"Checking {len(self.bgp_peers)} BGP peers...")
         # logger.debug(f"==== BGP PEER LIST ====\n{bgp_peers}")
         # for idx, peer in bgp_peers.iterrows():
         # print(peer)
@@ -94,10 +122,8 @@ class BgpFilterValidator:
         #     print(f'Routing policies for node {node_properties["Node"]}: {", ".join(node_properties["Routing_Policies"])}')
 
     def validate(self, disallowed_prefixes):
-        bgp_peers = self.bf.q.bgpPeerConfiguration().answer().frame()
-
         # TODO: this may not be the nicest way to iterate a DF
-        for _, bgp_peer in bgp_peers.iterrows():
+        for _, bgp_peer in self.bgp_peers.iterrows():
             node, peer_group, remote_ip, node_import_policies = (
                 bgp_peer["Node"],
                 bgp_peer["Peer_Group"],
@@ -113,9 +139,7 @@ class BgpFilterValidator:
             import_policy_spec = f"/^~(BGP_)?PEER_IMPORT_POLICY(:default)?:{remote_ip}(\/32)?~$/"
             node_import_policies_spec = ",".join(node_import_policies)
 
-            logger.debug(
-                f"{label} checking with policy spec {import_policy_spec} + {node_import_policies_spec}..."
-            )
+            logger.debug(f"{label} checking with policy spec {import_policy_spec} + {node_import_policies_spec}...")
 
             # print(f'===== BGP PEER: {node} {peer_group} {remote_ip} =====')
             # print(f'Policy spec {import_policy_spec}, fallback {node_import_policies_spec}')
@@ -141,9 +165,7 @@ class BgpFilterValidator:
                     f"{label}: internal parsing issue, unable to determine policy from spec {import_policy_spec} + {node_import_policies_spec}"
                 )
             elif permitted_incorrectly:
-                logger.error(
-                    f'{label}: import policy permits disallowed prefixes {", ".join(permitted_incorrectly)}'
-                )
+                logger.error(f'{label}: import policy permits disallowed prefixes {", ".join(permitted_incorrectly)}')
             else:
                 logger.info(f"{label}: no issues with prefix filter")
 
