@@ -30,12 +30,12 @@ class PolicyAction(enum.Enum):
         return getattr(PolicyAction, action)
 
 
-def main(debug, config_dir):
+def main(debug, config_dir, batfish_host):
     if not debug:
         logger.setLevel(logging.INFO)
 
     pandas.set_option("display.max_rows", None)
-    bf = prepare_batfish_session(config_dir)
+    bf = prepare_batfish_session(config_dir, batfish_host)
 
     logger.info(f"==== Validating traffic filters on interfaces ====")
     TrafficFilterValidator(bf).validate(BOGONS_IPV4)
@@ -44,8 +44,8 @@ def main(debug, config_dir):
     BgpFilterValidator(bf).validate(BOGONS_IPV4)
 
 
-def prepare_batfish_session(config_dir):
-    bf = Session(host="host.docker.internal")
+def prepare_batfish_session(config_dir, batfish_host):
+    bf = Session(host=batfish_host)
 
     bf.set_network("ocv")
     bf.init_snapshot(config_dir, name="ocv", overwrite=True)
@@ -212,7 +212,12 @@ if __name__ == "__main__":
         "config_dir",
         help="path to the config directory - files should be in " 'a subdirectory called "configs" on this path',
     )
+    parser.add_argument(
+        "--batfish_host",
+        default="localhost",
+        help="host where the Batish service is listening",
+    )
     parser.add_argument("-d", dest="debug", action="store_true", help=f"enable debug logs")
     args = parser.parse_args()
 
-    main(args.debug, args.config_dir)
+    main(args.debug, args.config_dir, args.batfish_host)

@@ -9,4 +9,4 @@ RUN pip3 install -r requirements.txt
 
 COPY ocv ocv
 
-CMD [ "python3", "ocv/run.py", "/snap" ]
+ENTRYPOINT [ "python3", "ocv/run.py", "--batfish_host", "host.docker.internal", "/snap" ]
