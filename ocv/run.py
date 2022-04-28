@@ -1,7 +1,8 @@
 import enum
+import ipaddress
 from typing import Optional
 from pybatfish.client.session import Session
-from pybatfish.datamodel import BgpRouteConstraints, HeaderConstraints, BgpRoute
+from pybatfish.datamodel import HeaderConstraints, BgpRoute
 from settings import BOGONS_IPV4
 import pandas
 import logging
@@ -31,16 +32,16 @@ def main():
     bf = prepare_batfish_session()
     logger.info(f"==== Validating traffic filters on interfaces ====")
     TrafficFilterValidator(bf).validate(BOGONS_IPV4)
-    # logger.info(f"==== Validating prefix filters on BGP sessions ====")
-    # BgpFilterValidator(bf).validate(BOGONS_IPV4)
+    logger.info(f"==== Validating prefix filters on BGP sessions ====")
+    BgpFilterValidator(bf).validate(BOGONS_IPV4)
 
 
 def prepare_batfish_session():
     bf = Session(host="localhost")
 
     bf.set_network("ocv")
-    # bf.init_snapshot("snap", name="ocv", overwrite=True)
-    bf.set_snapshot("ocv")
+    bf.init_snapshot("snap", name="ocv", overwrite=True)
+    # bf.set_snapshot("ocv")
     issues = bf.q.initIssues().answer().frame()
     # TODO: clean this output
     # if not issues.empty:
@@ -58,8 +59,7 @@ class TrafficFilterValidator:
 
     def _build_filter_status(self, disallowed_prefixes):
         logger.info(f"Checking traffic filter status for {len(disallowed_prefixes)} prefixes...")
-        # TODO: this prefix->IP is very hacky
-        bogon_ips = [prefix.split("/")[0][:-1] + "1" for prefix in disallowed_prefixes]
+        bogon_ips = [str(ipaddress.ip_network("192.0.2.0/24")[1]) for prefix in disallowed_prefixes]
         self.filters_status = {}
         for bogon_ip in bogon_ips:
             filter_results = (
@@ -67,26 +67,26 @@ class TrafficFilterValidator:
                 .answer()
                 .frame()
             )
-            for _, filter_result in filter_results.iterrows():
+            for filter_result in filter_results.itertuples():
                 node, filter_name, vrf, action = (
-                    filter_result["Node"],
-                    filter_result["Filter_Name"],
-                    filter_result["Flow"].ingressVrf,
-                    getattr(PolicyAction, filter_result["Action"]),
+                    filter_result.Node,
+                    filter_result.Filter_Name,
+                    filter_result.Flow.ingressVrf,
+                    getattr(PolicyAction, filter_result.Action),
                 )
                 self.filters_status.setdefault(node, {}).setdefault(filter_name, []).append((vrf, bogon_ip, action))
 
     def _check_interface_filters(self):
         interfaces = self.bf.q.interfaceProperties().answer().frame()
         logger.info(f"Checking {len(interfaces)} interfaces for traffic filters...")
-        for _, intf in interfaces.iterrows():
+        for intf in interfaces.itertuples():
             node, name, descr, prefixes, admin_up, incoming_filter = (
-                intf["Interface"].hostname,
-                intf["Interface"].interface,
-                intf.get("Description", ""),
-                intf["All_Prefixes"],
-                intf["Admin_Up"],
-                intf.get("Incoming_Filter_Name"),
+                intf.Interface.hostname,
+                intf.Interface.interface,
+                getattr(intf, "Description", ""),
+                intf.All_Prefixes,
+                intf.Admin_Up,
+                getattr(intf, "Incoming_Filter_Name", ""),
             )
             if descr:
                 descr = textwrap.shorten(descr, width=20, placeholder="...")
@@ -120,22 +120,14 @@ class BgpFilterValidator:
 
         self.bgp_peers = bf.q.bgpPeerConfiguration().answer().frame()
         logger.info(f"Checking {len(self.bgp_peers)} BGP peers...")
-        # logger.debug(f"==== BGP PEER LIST ====\n{bgp_peers}")
-        # for idx, peer in bgp_peers.iterrows():
-        # print(peer)
-
-        # nodes_properties = bf.q.nodeProperties(properties="Routing_Policies").answer().frame()
-        # for idx, node_properties in nodes_properties.iterrows():
-        #     print(f'Routing policies for node {node_properties["Node"]}: {", ".join(node_properties["Routing_Policies"])}')
 
     def validate(self, disallowed_prefixes):
-        # TODO: this may not be the nicest way to iterate a DF
-        for _, bgp_peer in self.bgp_peers.iterrows():
+        for bgp_peer in self.bgp_peers.itertuples():
             node, peer_group, remote_ip, node_import_policies = (
-                bgp_peer["Node"],
-                bgp_peer["Peer_Group"],
-                bgp_peer["Remote_IP"],
-                bgp_peer["Import_Policy"],
+                bgp_peer.Node,
+                bgp_peer.Peer_Group,
+                bgp_peer.Remote_IP,
+                bgp_peer.Import_Policy,
             )
             label = f"Peer {node} {peer_group} {remote_ip}"
 
@@ -147,14 +139,6 @@ class BgpFilterValidator:
             node_import_policies_spec = ",".join(node_import_policies)
 
             logger.debug(f"{label} checking with policy spec {import_policy_spec} + {node_import_policies_spec}...")
-
-            # print(f'===== BGP PEER: {node} {peer_group} {remote_ip} =====')
-            # print(f'Policy spec {import_policy_spec}, fallback {node_import_policies_spec}')
-
-            # rp = test_policy(bf, node, import_policy_spec, node_import_policies_spec, '10.0.0.0/24')
-            # for _, r in rp.iterrows():
-            #     print(r)
-            #     print(r['Trace'])
 
             prefix_actions = {
                 prefix: PolicyAction.from_answer(
