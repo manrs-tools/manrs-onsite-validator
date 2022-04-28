@@ -11,7 +11,29 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  test:
+     runs-on: ubuntu-latest
+     steps:
+       - name: Check out code
+         uses: actions/checkout@v1
+        
+       - name: Pull batfish image
+         run: docker pull batfish/allinone
+
+       - name: Start batfish
+         run: docker run -d --name batfish -v batfish-data:/data -p 8888:8888 -p 9997:9997 -p 9996:9996 batfish/allinone
+
+       - name: Install dependencies
+         run: python3 -mpip install -r requirements.txt
+
+       - name: Run
+         run: ocv/run.py -d ocv/test_data/snap 2>&1 | tee actual_output.txt
+
+       - name: Check output
+         run: diff ocv/test_data/expected_output.txt actual_output.txt
+
   build-and-push-image:
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -41,3 +63,5 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          
+  

@@ -52,8 +52,8 @@ def prepare_batfish_session(config_dir, batfish_host):
     # bf.set_snapshot("ocv")
     issues = bf.q.initIssues().answer().frame()
     # TODO: clean this output
-    # if not issues.empty:
-    # logger.info(f"==== Issues in parsing coniguration: ====\n{issues}")
+    if not issues.empty:
+        logger.info(f"==== Issues in parsing coniguration: ====\n{issues}")
     return bf
 
 
@@ -67,7 +67,7 @@ class TrafficFilterValidator:
 
     def _build_filter_status(self, disallowed_prefixes):
         logger.info(f"Checking traffic filter status for {len(disallowed_prefixes)} prefixes...")
-        bogon_ips = [str(ipaddress.ip_network("192.0.2.0/24")[1]) for prefix in disallowed_prefixes]
+        bogon_ips = [str(ipaddress.ip_network(prefix)[1]) for prefix in disallowed_prefixes]
         self.filters_status = {}
         for bogon_ip in bogon_ips:
             filter_results = (
@@ -102,7 +102,7 @@ class TrafficFilterValidator:
             label = f"Interface {node} {name} {descr}"
 
             if not prefixes or not admin_up:
-                logger.debug(f"{label}: ignoring due to admin down or no prefixes")
+                logger.debug(f"{label}: ignoring due to admin down or no prefixes:")
                 continue
 
             if incoming_filter:
@@ -137,7 +137,7 @@ class BgpFilterValidator:
             peer.Import_Policy[0] for peer in self.bgp_peers.itertuples() if len(peer.Import_Policy) == 1
         }
         self._build_policy_status(disallowed_prefixes, nodes_import_policies)
-        print(self.policies_statuses)
+
         for bgp_peer in self.bgp_peers.itertuples():
             node, peer_group, remote_ip, node_import_policy = (
                 bgp_peer.Node,
@@ -148,14 +148,14 @@ class BgpFilterValidator:
             label = f"Peer {node} {peer_group} {remote_ip}"
 
             prefix_actions = self._test_policy(node, remote_ip, node_import_policy)
+            if prefix_actions is None:
+                permitted_incorrectly = disallowed_prefixes
+            else:
+                permitted_incorrectly = [
+                    prefix for prefix, action in prefix_actions.items() if action == PolicyAction.PERMIT
+                ]
 
-            permitted_incorrectly = [
-                prefix for prefix, action in prefix_actions.items() if action == PolicyAction.PERMIT
-            ]
-
-            if not prefix_actions:
-                logger.error(f"{label}: internal parsing issue, unable to determine policy")
-            elif permitted_incorrectly:
+            if permitted_incorrectly:
                 logger.error(f'{label}: import policy permits disallowed prefixes {", ".join(permitted_incorrectly)}')
             else:
                 logger.info(f"{label}: no issues with prefix filter")

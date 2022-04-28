@@ -1,0 +1,21 @@
+INFO: ==== Validating traffic filters on interfaces ====
+INFO: Checking traffic filter status for 13 prefixes...
+INFO: Checking 10 interfaces for traffic filters...
+DEBUG: Interface as2dept1 Ethernet0/0 None: ignoring due to admin down or no prefixes:
+ERROR: Interface as2dept1 GigabitEthernet0/0 None: no traffic filter found
+ERROR: Interface as2dept1 GigabitEthernet1/0 None: no traffic filter found
+INFO: Interface as2dept1 GigabitEthernet2/0 None: no issues with traffic filter
+INFO: Interface as2dept1 GigabitEthernet3/0 None: no issues with traffic filter
+ERROR: Interface as2dept1 Loopback0 None: no traffic filter found
+DEBUG: Interface junos et-2/1/0 ...: ignoring due to admin down or no prefixes:
+INFO: Interface junos et-2/1/0.1 intf1: no issues with traffic filter
+ERROR: Interface junos et-2/1/0.2 intf2: no traffic filter found
+ERROR: Interface junos et-2/1/0.3 intf3: incorrectly permits 0.0.0.1, 100.64.0.1, 127.0.0.1, 169.254.0.1, 172.16.0.1, 192.0.0.1, 192.168.0.1, 198.18.0.1, 198.51.100.1, 203.0.113.1, 224.0.0.1
+INFO: ==== Validating prefix filters on BGP sessions ====
+INFO: Checking 5 BGP peers...
+INFO: Checking traffic filter status for 13 prefixes...
+ERROR: Peer junos peer1 192.0.2.10: import policy permits disallowed prefixes 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.0.0.0/24, 192.0.2.0/24, 192.168.0.0/16, 198.18.0.0/15, 198.51.100.0/24, 203.0.113.0/24, 224.0.0.0/4
+ERROR: Peer as2dept1 as2 2.34.101.3: import policy permits disallowed prefixes 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.0.0.0/24, 192.0.2.0/24, 192.168.0.0/16, 198.18.0.0/15, 198.51.100.0/24, 203.0.113.0/24, 224.0.0.0/4
+ERROR: Peer as2dept1 as2 2.34.201.3: import policy permits disallowed prefixes 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.0.0.0/24, 192.0.2.0/24, 192.168.0.0/16, 198.18.0.0/15, 198.51.100.0/24, 203.0.113.0/24, 224.0.0.0/4
+INFO: Peer junos peer2 192.0.2.11: no issues with prefix filter
+ERROR: Peer junos peer3 192.0.2.12: import policy permits disallowed prefixes 172.16.0.0/12, 192.0.0.0/24, 192.0.2.0/24, 192.168.0.0/16, 198.18.0.0/15, 198.51.100.0/24, 203.0.113.0/24, 224.0.0.0/4

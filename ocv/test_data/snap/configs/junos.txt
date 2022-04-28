@@ -1,0 +1,64 @@
+set version 17.3R2-S5.1
+set system host-name junos
+set system domain-name example.net
+set interfaces et-2/1/0 description "Internet2:core1.wash HundredGigE0/0/0/28|CAAREN-MCLN-SUPP-100GE-01500"
+set interfaces et-2/1/0 flexible-vlan-tagging
+set interfaces et-2/1/0 mtu 9192
+set interfaces et-2/1/0 encapsulation flexible-ethernet-services
+set interfaces et-2/1/0 unit 1 description "intf1"
+set interfaces et-2/1/0 unit 1 family inet filter input fw-in
+set interfaces et-2/1/0 unit 1 family inet address 192.0.2.1/24
+set interfaces et-2/1/0 unit 2 description "intf2"
+set interfaces et-2/1/0 unit 2 family inet address 192.0.2.2/24
+set interfaces et-2/1/0 unit 3 description "intf3"
+set interfaces et-2/1/0 unit 3 family inet filter input fw-in-partial
+set interfaces et-2/1/0 unit 3 family inet address 192.0.2.3/24
+set protocols bgp group peer1 type external
+set protocols bgp group peer1 peer-as 65530
+set protocols bgp group peer1 local-as 65531
+set protocols bgp group peer1 neighbor 192.0.2.10
+set protocols bgp group peer2 type external
+set protocols bgp group peer2 import ps-martians
+set protocols bgp group peer2 peer-as 65530
+set protocols bgp group peer2 local-as 65531
+set protocols bgp group peer2 neighbor 192.0.2.11
+set protocols bgp group peer3 type external
+set protocols bgp group peer3 import ps-martians-partial
+set protocols bgp group peer3 peer-as 65530
+set protocols bgp group peer3 local-as 65531
+set protocols bgp group peer3 neighbor 192.0.2.12
+set policy-options prefix-list pf-martians 0.0.0.0/8
+set policy-options prefix-list pf-martians 10.0.0.0/8
+set policy-options prefix-list pf-martians 100.64.0.0/10
+set policy-options prefix-list pf-martians 127.0.0.0/8
+set policy-options prefix-list pf-martians 169.254.0.0/16
+set policy-options prefix-list pf-martians 172.16.0.0/12
+set policy-options prefix-list pf-martians 192.0.0.0/24
+set policy-options prefix-list pf-martians 192.0.2.0/24
+set policy-options prefix-list pf-martians 192.168.0.0/16
+set policy-options prefix-list pf-martians 198.18.0.0/15
+set policy-options prefix-list pf-martians 198.51.100.0/24
+set policy-options prefix-list pf-martians 203.0.113.0/24
+set policy-options prefix-list pf-martians 224.0.0.0/4
+set policy-options prefix-list pf-martians-partial 0.0.0.0/8
+set policy-options prefix-list pf-martians-partial 10.0.0.0/8
+set policy-options prefix-list pf-martians-partial 100.64.0.0/10
+set policy-options prefix-list pf-martians-partial 127.0.0.0/8
+set policy-options prefix-list pf-martians-partial 169.254.0.0/16
+set policy-options policy-statement ps-martians term t-martians from prefix-list pf-martians
+set policy-options policy-statement ps-martians term t-martians then reject
+set policy-options policy-statement ps-martians-partial term t-martians-partial from prefix-list pf-martians-partial
+set policy-options policy-statement ps-martians-partial term t-martians-partial then reject
+set firewall filter fw-in term t-martians from source-address 10.0.0.0/8
+set firewall filter fw-in term t-martians from source-address 127.0.0.0/8
+set firewall filter fw-in term t-martians from source-address 172.16.0.0/12
+set firewall filter fw-in term t-martians from source-address 192.168.0.0/16
+set firewall filter fw-in term t-martians from source-address 0.0.0.0/8
+set firewall filter fw-in term t-martians from source-address 255.255.255.255/32
+set firewall filter fw-in term t-martians from source-address 169.254.0.0/16
+set firewall filter fw-in term t-martians from source-address 192.0.2.0/24
+set firewall filter fw-in term t-martians then discard
+set firewall filter fw-in-partial term t-martians-partial from source-address 10.0.0.0/8
+set firewall filter fw-in-partial term t-martians-partial from source-address 192.0.2.0/24
+set firewall filter fw-in-partial term t-martians-partial then discard
+set firewall filter fw-in-partial term t-default then accept
