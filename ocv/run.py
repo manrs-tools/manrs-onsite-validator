@@ -1,12 +1,15 @@
+#!/usr/bin/env python
+import argparse
 import enum
 import ipaddress
-from typing import Optional
-from pybatfish.client.session import Session
-from pybatfish.datamodel import HeaderConstraints, BgpRoute
-from settings import BOGONS_IPV4
-import pandas
 import logging
 import textwrap
+from typing import Optional
+
+import pandas
+from pybatfish.client.session import Session
+from pybatfish.datamodel import BgpRoute, HeaderConstraints
+from settings import BOGONS_IPV4
 
 logger = logging.getLogger("ocv")
 logging.basicConfig(level=logging.WARN, format="%(levelname)s: %(message)s")
@@ -27,20 +30,25 @@ class PolicyAction(enum.Enum):
         return getattr(PolicyAction, action)
 
 
-def main():
+def main(debug, config_dir):
+    if not debug:
+        logger.setLevel(logging.INFO)
+
     pandas.set_option("display.max_rows", None)
-    bf = prepare_batfish_session()
+    bf = prepare_batfish_session(config_dir)
+
     logger.info(f"==== Validating traffic filters on interfaces ====")
     TrafficFilterValidator(bf).validate(BOGONS_IPV4)
+
     logger.info(f"==== Validating prefix filters on BGP sessions ====")
     BgpFilterValidator(bf).validate(BOGONS_IPV4)
 
 
-def prepare_batfish_session():
+def prepare_batfish_session(config_dir):
     bf = Session(host="localhost")
 
     bf.set_network("ocv")
-    bf.init_snapshot("snap", name="ocv", overwrite=True)
+    bf.init_snapshot(config_dir, name="ocv", overwrite=True)
     # bf.set_snapshot("ocv")
     issues = bf.q.initIssues().answer().frame()
     # TODO: clean this output
@@ -79,6 +87,7 @@ class TrafficFilterValidator:
     def _check_interface_filters(self):
         interfaces = self.bf.q.interfaceProperties().answer().frame()
         logger.info(f"Checking {len(interfaces)} interfaces for traffic filters...")
+
         for intf in interfaces.itertuples():
             node, name, descr, prefixes, admin_up, incoming_filter = (
                 intf.Interface.hostname,
@@ -197,4 +206,13 @@ class BgpFilterValidator:
 
 
 if __name__ == "__main__":
-    main()
+    description = """Validate interface traffic filters and BGP peers."""
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument(
+        "config_dir",
+        help="path to the config directory - files should be in " 'a subdirectory called "configs" on this path',
+    )
+    parser.add_argument("-d", dest="debug", action="store_true", help=f"enable debug logs")
+    args = parser.parse_args()
+
+    main(args.debug, args.config_dir)
