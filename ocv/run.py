@@ -122,71 +122,78 @@ class BgpFilterValidator:
         logger.info(f"Checking {len(self.bgp_peers)} BGP peers...")
 
     def validate(self, disallowed_prefixes):
+        # For node Import_Policy's, we only consider them if there is only one
+        # as for all other cases Batfish will generate a composite policy.
+        nodes_import_policies = {
+            peer.Import_Policy[0] for peer in self.bgp_peers.itertuples() if len(peer.Import_Policy) == 1
+        }
+        self._build_policy_status(disallowed_prefixes, nodes_import_policies)
+        print(self.policies_statuses)
         for bgp_peer in self.bgp_peers.itertuples():
-            node, peer_group, remote_ip, node_import_policies = (
+            node, peer_group, remote_ip, node_import_policy = (
                 bgp_peer.Node,
                 bgp_peer.Peer_Group,
                 bgp_peer.Remote_IP,
-                bgp_peer.Import_Policy,
+                bgp_peer.Import_Policy if len(bgp_peer.Import_Policy) == 1 else None,
             )
             label = f"Peer {node} {peer_group} {remote_ip}"
 
-            # Policies may appear in three ways:
-            # - Composite policy for Juniper, as ~PEER_IMPORT_POLICY:{peer_ip}/32~
-            # - Composite policy for Cisco, as ~BGP_PEER_IMPORT_POLICY:default:{peer_ip}~
-            # - From the node's Import_Policy - this is the option of last resort
-            import_policy_spec = f"/^~(BGP_)?PEER_IMPORT_POLICY(:default)?:{remote_ip}(\/32)?~$/"
-            node_import_policies_spec = ",".join(node_import_policies)
-
-            logger.debug(f"{label} checking with policy spec {import_policy_spec} + {node_import_policies_spec}...")
-
-            prefix_actions = {
-                prefix: PolicyAction.from_answer(
-                    self.test_policy(node, import_policy_spec, node_import_policies_spec, prefix)
-                )
-                for prefix in disallowed_prefixes
-            }
+            prefix_actions = self._test_policy(node, remote_ip, node_import_policy)
 
             permitted_incorrectly = [
                 prefix for prefix, action in prefix_actions.items() if action == PolicyAction.PERMIT
             ]
 
             if not prefix_actions:
-                logger.error(
-                    f"{label}: internal parsing issue, unable to determine policy from spec {import_policy_spec} + {node_import_policies_spec}"
-                )
+                logger.error(f"{label}: internal parsing issue, unable to determine policy")
             elif permitted_incorrectly:
                 logger.error(f'{label}: import policy permits disallowed prefixes {", ".join(permitted_incorrectly)}')
             else:
                 logger.info(f"{label}: no issues with prefix filter")
 
-    def test_policy(self, node, policy_spec, node_policy_spec, prefix):
-        # TODO: this is a bit slow, probably should load this in bulk and then extract details? Depends on policy questions.
-        routes = [
-            BgpRoute(
-                network=prefix,
-                originatorIp="192.0.2.0",
-                originType="egp",
-                protocol="bgp",
-            )
-        ]
-        answer = (
-            self.bf.q.testRoutePolicies(nodes=node, policies=policy_spec, direction="in", inputRoutes=routes)
-            .answer()
-            .frame()
-        )
-        if answer.empty and node_policy_spec:
-            return (
-                self.bf.q.testRoutePolicies(
-                    nodes=node,
-                    policies=node_policy_spec,
-                    direction="in",
-                    inputRoutes=routes,
+    def _test_policy(self, node, peer_ip, node_policy):
+        # Policies may appear in three ways:
+        # - Composite policy for Juniper, as ~PEER_IMPORT_POLICY:{peer_ip}/32~
+        # - Composite policy for Cisco, as ~BGP_PEER_IMPORT_POLICY:default:{peer_ip}~
+        # - From the node's Import_Policy - this is the option of last resort
+        possible_keys = [f"~PEER_IMPORT_POLICY:{peer_ip}/32~", f"~BGP_PEER_IMPORT_POLICY:default:{peer_ip}~"]
+        if node_policy:
+            possible_keys.append(node_policy)
+
+        for key in possible_keys:
+            try:
+                return self.policies_statuses[node][key]
+            except KeyError:
+                continue
+        return None
+
+    def _build_policy_status(self, disallowed_prefixes, nodes_import_policies):
+        logger.info(f"Checking traffic filter status for {len(disallowed_prefixes)} prefixes...")
+        self.policies_statuses = {}
+
+        policy_spec = f"/^(~(BGP_)?PEER_IMPORT_POLICY(:default)?:[\d:\.]+(\/32)?~|{'|'.join(nodes_import_policies)})$/"
+
+        for prefix in disallowed_prefixes:
+            routes = [
+                BgpRoute(
+                    network=prefix,
+                    originatorIp="192.0.2.0",
+                    originType="egp",
+                    protocol="bgp",
                 )
-                .answer()
-                .frame()
+            ]
+
+            policy_results = (
+                self.bf.q.testRoutePolicies(policies=policy_spec, direction="in", inputRoutes=routes).answer().frame()
             )
-        return answer
+            for policy_result in policy_results.itertuples():
+                node, policy_name, action = (
+                    policy_result.Node,
+                    policy_result.Policy_Name,
+                    getattr(PolicyAction, policy_result.Action),
+                )
+                action = getattr(PolicyAction, policy_result.Action)
+                self.policies_statuses.setdefault(node, {}).setdefault(policy_name, {})[prefix] = action
 
 
 if __name__ == "__main__":
