@@ -45,7 +45,7 @@ def main(debug, config_dir):
 
 
 def prepare_batfish_session(config_dir):
-    bf = Session(host="localhost")
+    bf = Session(host="host.docker.internal")
 
     bf.set_network("ocv")
     bf.init_snapshot(config_dir, name="ocv", overwrite=True)
