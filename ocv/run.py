@@ -33,6 +33,7 @@ class PolicyAction(enum.Enum):
 def main(debug, config_dir, batfish_host):
     if not debug:
         logger.setLevel(logging.INFO)
+    logger.info(f"==== Connecting to batfish on {batfish_host} ====")
 
     pandas.set_option("display.max_rows", None)
     bf = prepare_batfish_session(config_dir, batfish_host)
@@ -49,11 +50,11 @@ def prepare_batfish_session(config_dir, batfish_host):
 
     bf.set_network("ocv")
     bf.init_snapshot(config_dir, name="ocv", overwrite=True)
-    # bf.set_snapshot("ocv")
     issues = bf.q.initIssues().answer().frame()
-    # TODO: clean this output
     if not issues.empty:
-        logger.info(f"==== Issues in parsing coniguration: ====\n{issues}")
+        logger.info(f"==== Issues in parsing configuration: ====")
+    for issue in issues.itertuples():
+        logger.info(f"{issue.Source_Lines}: {issue.Type}: {issue.Details}: {issue.Line_Text}")
     return bf
 
 
@@ -177,7 +178,7 @@ class BgpFilterValidator:
         return None
 
     def _build_policy_status(self, disallowed_prefixes, nodes_import_policies):
-        logger.info(f"Checking traffic filter status for {len(disallowed_prefixes)} prefixes...")
+        logger.info(f"Checking BGP filter status for {len(disallowed_prefixes)} prefixes...")
         self.policies_statuses = {}
 
         policy_spec = f"/^(~(BGP_)?PEER_IMPORT_POLICY(:default)?:[\d:\.]+(\/32)?~|{'|'.join(nodes_import_policies)})$/"

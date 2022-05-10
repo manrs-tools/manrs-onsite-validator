@@ -30,7 +30,7 @@ jobs:
          run: ocv/run.py -d ocv/test_data/snap 2>&1 | tee actual_output.txt
 
        - name: Check output
-         run: diff ocv/test_data/expected_output.txt actual_output.txt
+         run: diff -u ocv/test_data/expected_output.txt actual_output.txt
 
   build-and-push-image:
     needs: test
