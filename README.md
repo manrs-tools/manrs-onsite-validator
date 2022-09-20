@@ -20,8 +20,8 @@ Then, pull the latest Docker image from this repository, and run it, mounting
 your config directory into `/snap/configs` on the container, so if your
 configs are in `/tmp/configs` on the host:
 
-* `docker pull ghcr.io/manrs-tools/MANRS-onsite-validator:main`
-* `docker run -v /tmp/configs:/snap/configs ghcr.io/manrs-tools/MANRS-onsite-validator:main`
+* `docker pull ghcr.io/manrs-tools/manrs-onsite-validator:main`
+* `docker run -v /tmp/configs:/snap/configs ghcr.io/manrs-tools/manrs-onsite-validator:main`
 
 Any ERROR output is a suspected configuration that does not meet MANRS guidelines.
 You can get additional debugging output by adding `-d` at the end.
